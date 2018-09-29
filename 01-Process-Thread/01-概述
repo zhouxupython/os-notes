@@ -1,1 +1,315 @@
+1. 
+可重入 线程安全
 
+使用递归锁能够保证malloc函数的线程安全性，但是不能保证它的可重入性。
+程序调用malloc函数时收到信号，在信号处理函数里再调用malloc函数就可能破坏共享的内存链表等资源，因而是不可重入的。
+
+2.
+自旋锁  自旋锁与互斥锁的区别
+
+3. 
+cond为何要和mutex搭配使用	https://www.cnblogs.com/x_wukong/p/7909895.html
+(1) while 解决假唤醒 	
+也就是wait出来后，因为调度原因又被其他线程抢走了cpu，
+待调度回来后，条件被之前的线程修改了，又不满足了，所以再次判断一下，不满足继续wait
+
+(2)
+wait前后加锁、解锁是为了保护临界区，即临界区的改变导致了cond的成立(cond_signal)和不成立(cond_wait)	https://www.zhihu.com/question/24116967
+其实就是保护这些用于cond能否成立的关键数值
+
+wait()操作通常伴随着条件检测，如：
+while(pass == 0)
+    pthread_cond_wait(...);
+
+signal*()函数通常伴随着条件改变，如：
+pass = 1;
+pthread_cond_signal(...)
+由于此两处都涉及到变量pass，所以为了防止Race Condition，必须得加锁。所以代码会变成下面这样：
+// 条件测试
+pthread_mutex_lock(mtx);
+while(pass == 0)
+    pthread_cond_wait(...);
+pthread_mutex_unlock(mtx);
+
+// 条件发生修改，对应的signal代码
+pthread_mutex_lock(mtx);
+pass = 1;
+pthread_mutex_unlock(mtx);
+pthread_cond_signal(...);
+
+例如用于解决此处pass变量的Race Condition的mutex
+
+
+
+在介绍pthread_cond_wait的资料中常说传入的这个mutex是用来保护“条件变量”的，
+但是这个条件变量并不是你传入的那个“pthread_cond_t”类型的变量。
+因为用户写程序的时候通常是发现当前一些变量的值比如说变量a并不满足期待的条件，
+所以选择调用cond_wait把当前线程挂起，期待别的线程修改a的值。
+变量a自然是多个线程之间共享的，所以本意是让你用这个mutex保护a的，
+而不是说pthread_cond_wait的内部实现需要用这个mutex保护什么。
+
+
+
+
+
+（3）信号丢失方面的解释
+https://blog.csdn.net/brian12f/article/details/73882166
+https://blog.csdn.net/u011418878/article/details/69374972 ！！！
+http://manio.org/2014/06/22/pthread-cond-wait-and-mutex.html
+
+wait 不是原子操作，有可能在内部解锁，但是还没有挂到等待队列时，就被调度出去切换到了别的线程
+如果该调度线程是 cond_signal，那么发出信号后，该信号就丢失了，之前那个线程因为还不在等待队列中，就永远不会被唤醒了。
+
+所以wait内部，是不是先将线程挂到等待队列，然后再解锁mutex，
+此时另一个会cond_signal的线程才能拿到锁，启动执行改变条件，然后再cond_signal，信号就不会丢失了
+
+
+
+
+（4）
+为什么不把线程A中的pthread_cond_signal()放在pthread_mutex_unlock()前面？
+当一个等待线程被唤醒的时候，它必须首先加锁互斥量（参见pthread_cond_wait()执行步骤）。
+如果线程被唤醒而此时通知线程任然锁住互斥量，则被唤醒线程会立刻阻塞在互斥量上，等待通知线程解锁该互斥量，引起线程的上下文切换。
+当通知线程解锁后，被唤醒线程继续获得锁，再一次的引起上下文切换。
+这样导致被唤醒线程不能顺利加锁，延长了加锁时间，加重了系统不必要的负担。
+
+就是指A先通知B，B此时被唤醒，然后B需要加锁才能从wait中返回，但是A此时还没有解锁，
+所以此时，B就会阻塞在锁上，此时会切换回A，A继续解锁，然后切换回B，B从wait中返回
+这样A到B之间会有线程的上下文切换
+
+如果是A先解锁，再通知，那么B收到后就被唤醒，可以直接加锁从wait中返回，节省了上下文切换的时间
+
+
+
+
+
+
+
+
+
+
+4. 递归锁
+
+
+5. semaphore和mutex的区别？
+https://www.zhihu.com/question/47704079
+mutex，一句话：保护共享资源。
+semaphore的用途，一句话：调度线程。
+条件锁，本质上还是锁，它的用途，还是围绕“共享资源”的。条件锁最典型的用途就是：防止不停地循环去判断一个共享资源是否满足某个条件。
+
+锁是服务于共享资源的；而semaphore是服务于多个线程间的执行的逻辑顺序的。
+
+条件锁最典型的用途就是：防止不停地循环去判断一个共享资源是否满足某个条件。
+
+线程池是程序员根据具体的硬件水平和不同的设计需求、为了达到最佳的运行效果而避免反复新建和释放线程同时对同一时刻启动的线程数量的限制
+线程池是通过用固定数量的线程去执行任务队列里的任务来达到避免反复创建和销毁线程而造成的资源浪费；
+而semaphore并没有直接提供这种机制 ---- 
+上面的例子中虽然同时最多有两个线程在运行，但是最一开始三个线程就已经都创建好了；
+而线程池则是：一开始就创建两个线程，然后将这三个任务加入到线程池的任务队列中，让线程池利用这两个线程去完成这三个任务。
+
+https://stackoverflow.com/questions/62814/difference-between-binary-semaphore-and-mutex#
+
+
+6. 线程池
+
+线程池是程序员根据具体的硬件水平和不同的设计需求、为了达到最佳的运行效果而避免反复新建和释放线程同时对同一时刻启动的线程数量的限制
+
+
+
+7. 各种linux 管理命令再深入看
+htop
+
+
+8. strace ftrace
+
+
+
+
+9.进程和线程之间有什么根本性的区别
+线程是调度单位
+
+https://www.zhihu.com/question/44087187
+在Linux中，无论是进程还是线程，根本上都是通过clone一个已存在task（进程|线程）实现的，二者的差别就在于clone时Flags的传递，当CLONE_VM 位设置时（共享地址空间），创建线程；当该位未设置时，创建进程。
+
+在Linux中，共享内存的task可以被看做是同一进程下的不同线程。从内核的角度来讲，每一个task都具有一个PID(Process IDentifier)，注意这里，同一进程下的线程拥有不同的PID！。此外，每一个task还具有TGID（Task Group ID)，同一进程下的线程TGID相同，这个TGID即是我们通常意义下的PID。
+
+https://stackoverflow.com/questions/9305992/if-threads-share-the-same-pid-how-can-they-be-identified
+TGID (thread group ID) 
+
+ps: PID 就是 tgid，LWP就是 线程ID	User View
+top：PID 就是 线程ID				Kernel View
+
+zx@zx:~/code/c/pthread$ ps -L -p 3842
+  PID   LWP TTY          TIME CMD
+ 3842  3842 pts/0    00:02:48 p4v.bin
+ 3842  3850 pts/0    00:00:00 QXcbEventReader
+ 3842  3856 pts/0    00:00:00 llvmpipe-0
+ 3842  3857 pts/0    00:00:00 llvmpipe-1
+ 3842  3858 pts/0    00:00:00 llvmpipe-2
+ 3842  3859 pts/0    00:00:00 llvmpipe-3
+ 3842  3861 pts/0    00:00:00 Thread (pooled)
+ 3842  3862 pts/0    00:00:00 Thread (pooled)
+ 3842  3863 pts/0    00:00:00 Thread (pooled)
+ 3842  3864 pts/0    00:00:00 Thread (pooled)
+ 3842  3865 pts/0    00:00:00 Qt bearer threa
+ 3842  3866 pts/0    00:00:00 Qt HTTP thread
+ 3842  3867 pts/0    00:00:02 Thread (pooled)
+ 3842  3868 pts/0    00:00:00 Qt HTTP thread
+ 3842  3870 pts/0    00:00:00 Qt HTTP thread
+zx@zx:~/code/c/pthread$
+zx@zx:~/code/c/pthread$
+zx@zx:~/code/c/pthread$ top -H -p 3842
+top - 16:36:23 up 4 days,  5:23,  2 users,  load average: 0.07, 0.02, 0.00
+Threads:  15 total,   0 running,  15 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  0.1 us,  0.0 sy,  0.0 ni, 99.8 id,  0.1 wa,  0.0 hi,  0.0 si,  0.0 st
+KiB Mem:   8129148 total,  1742176 used,  6386972 free,   267888 buffers
+KiB Swap:  8340476 total,        0 used,  8340476 free.   804348 cached Mem
+
+  PID USER      PR  NI    VIRT    RES    SHR S %CPU %MEM     TIME+ COMMAND
+ 3842 zx        20   0 1531444 110888  69240 S  0.0  1.4   2:48.82 p4v.bin
+ 3850 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.71 QXcbEventReader
+ 3856 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 llvmpipe-0
+ 3857 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 llvmpipe-1
+ 3858 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 llvmpipe-2
+ 3859 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 llvmpipe-3
+ 3861 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.56 Thread (pooled)
+ 3862 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.60 Thread (pooled)
+ 3863 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.59 Thread (pooled)
+ 3864 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.60 Thread (pooled)
+ 3865 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 Qt bearer threa
+ 3866 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 Qt HTTP thread
+ 3867 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:02.16 Thread (pooled)
+ 3868 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 Qt HTTP thread
+ 3870 zx        20   0 1531444 110888  69240 S  0.0  1.4   0:00.00 Qt HTTP thread
+
+
+（2）getpid gettid getgid	getpgrp
+
+
+
+
+（3）https://www.zhihu.com/question/57402169
+纯用户态线程最大的痛点——某个线程blocking的系统调用会导致整个进程被阻塞。
+
+由于内核不知道线程1、2的存在（用户态线程），因此线程2调用read调用的时候，内核只知道这是进程b的一次系统调用，
+因此阻塞发生时，内核把进程b在内核的状态设为阻塞态。
+由于线程2对read的调用可能绕过了线程库，因此线程库的代码（比如说某个管理线程）还没来得及执行，因此线程2在进程b的视角下（即在线程库的线程状态表中），确实是非阻塞态，即运行态的。
+
+为什么说有点业余：通过上面的分析我们已经看到，一个说的是进程在内核的状态，一个说的是线程在线程库中的状态，是两个层面的东西，
+实际上它们之间不是充要条件的关系，不需要完全保持同步。
+实际上，进程在内核态可运行是线程可以真正运行的必要条件。
+进一步说，这样看似“矛盾”的情况会不会出问题呢？
+其实没关系，虽然进程b还认为线程1、2都能运行，但实际上整个进程都在挂起，进程b这样这时候想什么都没有任何意义。
+只有进程b恢复了在内核的可运行状态，进程b对线程的控制才会奏效。
+
+
+
+
+10. Linux下多个线程(NPTL)等待同一个锁定的互斥量。占用线程解锁后，哪一个线程会被唤醒？
+https://www.zhihu.com/question/283318421
+当用户态线程是普通线程时，mutex_lock 函数进入内核态睡眠等待唤醒时，按顺序排队等待的，而实时线程，是按优先级排队等待的。
+
+
+
+
+11.https://www.zhihu.com/question/35128513
+NPTL实现中，用户创建的线程和内核中调度实体的关系是1：1。其他线程库的实现，可以支持M：N。
+在NPTL实现中，用户态的线程，在内核态有自己的进程描述符task_struct，是独立的调度实体。
+
+Linux里，用户代码通过pthread库创建线程的过程虽然看似是用户在创建“用户级线程”，
+实际上是pthread_create暗中调用了clone系统调用，由操作系统帮忙创建内核级线程的过程，因而不能称作用户级线程。
+在Linux中使用pthread_create创建的“用户线程”准确讲应该叫轻量级进程
+
+clone(CLONE_VM | ...)
+如果设置了CLONE_VM，那么生成的就是当前进程的一个线程，（If  CLONE_VM  is set, the calling process and the child process run in the same memory space.  ）
+否则就是一个进程
+
+
+
+
+
+12.Linux下进程/线程间通信如何正确学习？
+https://www.zhihu.com/question/30734199
+https://github.com/clpsz/linux-itss
+https://github.com/clpsz/linux-ipcs
+http://mij.oltrelinux.com/devel/unixprg/#ipc__named_pipes_examples
+http://beej.us/guide/bgipc/
+
+
+
+13. Xv6
+以前应该整理过一些链接
+xv6教学操作系统，是Unix v6在X86架构上的ANSI标准C实现，还添加了多核的支持。
+https://github.com/deyuhua/xv6-book-chinese
+https://pdos.csail.mit.edu/6.828/2012/xv6.html
+教授这学期重新回来教操作系统了哦～可以google他的个人主页找到这学期课程的网页，上课都有录视频上传的！
+
+https://github.com/ranxian/xv6-chinese
+
+
+
+14.
+深入理解计算机系统(CSAPP)    
+恐龙书
+
+Operating Systems: Three Easy Pieces	http://pages.cs.wisc.edu/~remzi/OSTEP/
+http://recursivebooks.com/  Operating Systems: Principles and Practice
+
+
+先阅读孙钟秀先生主编的《操作系统教程》:操作系统教程（第四版）孙钟秀.pdf 
+这本由陈怀临先生做过注释孙钟秀 。《操作系统教程》 。注释（全）.pdf 你完全可以把这两本书下载下来然后复印进行对比阅读。
+http://vdisk.weibo.com/s/ayG13we2ly28M
+http://vdisk.weibo.com/s/ayG13we2ly28t
+阅读原版《Modern Operating Systems 4th》和《Operating Systems Design and Implementation 3rd》
+
+
+http://recursivebooks.com/  Operating Systems: Principles and Practice
+
+http://faculty.salina.k-state.edu/tim/ossg/index.html	都是插图的操作系统书籍
+
+
+（n）
+先看几本书吧，先看中文再看英文，
+然后再看Xv6做实验
+看书的时候，一个章节可以在几本书中对照着看，彻底搞懂后做笔记
+
+Operating Systems: Three Easy Pieces	http://pages.cs.wisc.edu/~remzi/OSTEP/
+http://recursivebooks.com/  Operating Systems: Principles and Practice
+http://vdisk.weibo.com/s/ayG13we2ly28M
+http://vdisk.weibo.com/s/ayG13we2ly28t
+
+http://faculty.salina.k-state.edu/tim/ossg/index.html
+
+恐龙书
+Modern Operating Systems ？？？
+
+
+收集实验内容
+
+-------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
+
+
+
+（x）
+http://manio.org/2014/06/22/pthread-cond-wait-and-mutex.html
+
+
+[!] kernel&glibc src code
+
+
+
+http://www.makelinux.com/books/
+
+http://manio.org/2010/01/08/scheduling-of-linux-view-of-society.html
+
+
+http://blog.chinaunix.net/uid-10231348-id-3027224.html  posix thread
+
+http://www.makelinux.com/books/
+
+reading code：csp（zx modify）  speaker-service（zx）
+
+
+看的东西都要写文章记录，不然最后又会忘记
