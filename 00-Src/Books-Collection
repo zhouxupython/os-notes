@@ -1,1 +1,38 @@
+如何学习OS
 
+深入理解计算机系统(CSAPP)    
+恐龙书
+
+Operating Systems: Three Easy Pieces	http://pages.cs.wisc.edu/~remzi/OSTEP/
+http://recursivebooks.com/  Operating Systems: Principles and Practice
+
+
+先阅读孙钟秀先生主编的《操作系统教程》:操作系统教程（第四版）孙钟秀.pdf 
+这本由陈怀临先生做过注释孙钟秀 。《操作系统教程》 。注释（全）.pdf 你完全可以把这两本书下载下来然后复印进行对比阅读。
+http://vdisk.weibo.com/s/ayG13we2ly28M
+http://vdisk.weibo.com/s/ayG13we2ly28t
+阅读原版《Modern Operating Systems 4th》和《Operating Systems Design and Implementation 3rd》
+
+
+http://recursivebooks.com/  Operating Systems: Principles and Practice
+
+http://faculty.salina.k-state.edu/tim/ossg/index.html	都是插图的操作系统书籍
+
+
+（n）计划
+先看几本书吧，先看中文再看英文，
+然后再看Xv6做实验
+看书的时候，一个章节可以在几本书中对照着看，彻底搞懂后做笔记
+
+Operating Systems: Three Easy Pieces	http://pages.cs.wisc.edu/~remzi/OSTEP/
+http://recursivebooks.com/  Operating Systems: Principles and Practice
+http://vdisk.weibo.com/s/ayG13we2ly28M
+http://vdisk.weibo.com/s/ayG13we2ly28t
+
+http://faculty.salina.k-state.edu/tim/ossg/index.html
+
+恐龙书
+Modern Operating Systems ？？？
+
+
+收集实验内容
